@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HI168 网盘 · 最终修复版</title>
+<style>
+:root{
+  --bg:#121212;
+  --card:#1e1e1e;
+  --text:#eee;
+  --bd:#333;
+  --pr:#007bff;
+  --hover:#252525;
+  --danger:#ef4444;
+  --success:#10b981;
+}
+.light{
+  --bg:#fff;
+  --card:#f8f8f8;
+  --text:#222;
+  --bd:#ddd;
+  --hover:#f0f0f0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;padding:16px}
+.card{background:var(--card);border-radius:12px;padding:16px;margin:0 0 16px;border:1px solid var(--bd)}
+.btn{padding:8px 14px;border-radius:8px;border:none;background:var(--pr);color:#fff;cursor:pointer;transition:opacity .2s}
+.btn:hover{opacity:.9}
+.btn-secondary{background:#374151}
+.btn-danger{background:var(--danger)}
+.btn-success{background:var(--success)}
+input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--text);margin:6px 0}
+#ctx{position:fixed;z-index:999;background:var(--card);border:1px solid var(--bd);display:none;border-radius:10px;padding:6px 0;min-width:140px}
+#ctx div{padding:10px 16px;cursor:pointer}
+#ctx div:hover{background:var(--hover)}
+.editor{position:fixed;inset:0;background:#000000cc;display:none;padding:20px;z-index:1000}
+.editor .box{background:var(--card);max-width:800px;margin:0 auto;height:100%;border-radius:12px;padding:20px;display:flex;flex-direction:column}
+textarea{width:100%;flex:1;background:var(--bg);color:var(--text);border:1px solid var(--bd);padding:12px;border-radius:10px;resize:none;margin:10px 0}
+.progress{height:6px;background:var(--bd);border-radius:3px;margin:10px 0;overflow:hidden}
+.bar{height:100%;background:var(--pr);width:0;transition:width .2s linear}
+.panel{display:none;background:var(--card);padding:16px;border-radius:12px;margin-top:14px;border:1px solid var(--bd)}
+.flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style>
+</head>
+
+<body>
+<div class="container" style="max-width:1200px;margin:0 auto">
+  <!-- 登录模块 -->
+  <div class="card">
+    <h3>🔐 账号登录</h3>
+    <input id="loginUser" placeholder="请输入账号">
+    <input id="loginPass" type="password" placeholder="请输入密码">
+    <div class="flex">
+      <button class="btn" onclick="login()">登录</button>
+      <button class="btn btn-secondary" onclick="toggleTheme()">切换主题</button>
+      <button class="btn btn-secondary" onclick="showChangePwd()">修改密码</button>
+      <button class="btn btn-secondary" onclick="showUserPanel()">多用户管理（管理员）</button>
+    </div>
+  </div>
+
+  <!-- 多用户管理面板 -->
+  <div class="panel" id="userPanel">
+    <h3>👥 多用户管理</h3>
+    <div class="flex">
+      <button class="btn btn-success" onclick="createUser()">新建用户</button>
+      <button class="btn btn-danger" onclick="deleteUser()">删除用户</button>
+      <button class="btn btn-secondary" onclick="hideUserPanel()">关闭面板</button>
+    </div>
+    <div id="userList" style="margin-top:12px"></div>
+  </div>
+
+  <!-- 主操作面板 -->
+  <div class="card" id="mainPanel" style="display:none">
+    <h3>📁 文件操作</h3>
+    <div class="flex">
+      <input type="file" id="fileInput" webkitdirectory multiple style="width:auto;flex:1">
+      <button class="btn" onclick="upload()">上传/文件夹</button>
+      <button class="btn btn-secondary" onclick="mkdir()">新建文件夹</button>
+      <button class="btn btn-secondary" onclick="newFile()">新建文件</button>
+      <button class="btn btn-secondary" onclick="batchZip()">打包选中</button>
+      <button class="btn btn-secondary" onclick="createShare()">生成分享</button>
+    </div>
+
+    <!-- 离线下载 -->
+    <div class="flex" style="margin-top:10px">
+      <input id="offlineUrl" placeholder="离线下载链接" style="flex:1">
+      <button class="btn btn-success" onclick="offlineDownload()">开始离线下载</button>
+    </div>
+
+    <!-- 进度条 -->
+    <div class="progress"><div class="bar" id="progressBar"></div></div>
+
+    <!-- 搜索与路径 -->
+    <input id="searchInput" placeholder="搜索文件/文件夹" oninput="renderFileList()">
+    <div id="currentPath" style="margin:10px 0;font-weight:500">🏠 根目录</div>
+
+    <!-- 文件列表 -->
+    <div id="fileList"></div>
+  </div>
+
+  <!-- 右键菜单 -->
+  <div id="ctxMenu">
+    <div onclick="copyDirectLink()">复制直链</div>
+    <div onclick="previewFile()">预览文件</div>
+    <div onclick="openFileEditor()">编辑文件</div>
+    <div onclick="renameFile()">重命名</div>
+    <div onclick="downloadFolder()">下载文件夹</div>
+    <div onclick="encryptFolder()">加密文件夹</div>
+    <div onclick="deleteFile()" style="color:var(--danger)">删除</div>
+  </div>
+
+  <!-- 文件编辑器 -->
+  <div class="editor" id="fileEditor">
+    <div class="box">
+      <h3>编辑文件</h3>
+      <textarea id="editorContent"></textarea>
+      <div class="flex">
+        <button class="btn btn-success" onclick="saveFile()">保存文件</button>
+        <button class="btn btn-danger" onclick="closeEditor()">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 全局状态
+let authToken = ""
+let currentPath = ""
+let fileList = []
+let selectedFiles = new Set()
+let isAdmin = false
+let currentFileKey = ""
+let currentFileType = ""
+
+// 配置项
+const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB分片，断点续传用
+const DEFAULT_USER = "admin"
+const DEFAULT_PASS = "123456"
+
+// ==================== 核心工具函数 ====================
+function $(id) { return document.getElementById(id) }
+function toggleTheme() { document.body.classList.toggle("light") }
+
+// 全局点击关闭右键菜单
+document.addEventListener("click", () => {
+  $("ctxMenu").style.display = "none"
+})
+
+// ==================== 登录与鉴权 ====================
+async function login() {
+  const user = $("loginUser").value.trim()
+  const pass = $("loginPass").value.trim()
+  if (!user || !pass) return alert("请输入账号密码")
+
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user, pass })
+    })
+    const data = await res.json()
+
+    if (data.ok) {
+      authToken = data.token
+      isAdmin = data.isAdmin
+      $("mainPanel").style.display = "block"
+      await loadFileList()
+    } else {
+      alert("账号或密码错误")
+    }
+  } catch (e) {
+    alert("登录失败：" + e.message)
+  }
+}
+
+// ==================== 文件列表加载与渲染 ====================
+async function loadFileList() {
+  try {
+    const res = await fetch("/api/list", {
+      headers: { "Authorization": `Bearer ${authToken}` }
+    })
+    fileList = await res.json()
+    renderFileList()
+  } catch (e) {
+    alert("加载文件列表失败：" + e.message)
+  }
+}
+
+function renderFileList() {
+  const keyword = $("searchInput").value.toLowerCase().trim()
+  $("currentPath").innerText = currentPath || "🏠 根目录"
+
+  const filteredFiles = fileList.filter(file => 
+    file.name.toLowerCase().includes(keyword)
+  )
+
+  $("fileList").innerHTML = filteredFiles.map(file => `
+    <div style="padding:12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px"
+         oncontextmenu="showContextMenu(event, '${file.key}', '${file.type}')">
+      <input type="checkbox" onchange="toggleSelect('${file.key}')" ${selectedFiles.has(file.key) ? "checked" : ""}>
+      <span style="font-size:18px">${file.type === "folder" ? "📁" : "📄"}</span>
+      <span style="flex:1">${file.name}</span>
+      <span style="color:#999;font-size:12px">${file.size ? (file.size / 1024 / 1024).toFixed(2) + "MB" : "-"}</span>
+    </div>
+  `).join("")
+}
+
+function toggleSelect(key) {
+  selectedFiles.has(key) ? selectedFiles.delete(key) : selectedFiles.add(key)
+}
+
+// ==================== 右键菜单 ====================
+function showContextMenu(e, key, type) {
+  e.preventDefault()
+  currentFileKey = key
+  currentFileType = type
+
+  const menu = $("ctxMenu")
+  menu.style.display = "block"
+  menu.style.left = Math.min(e.pageX, window.innerWidth - menu.offsetWidth) + "px"
+  menu.style.top = Math.min(e.pageY, window.innerHeight - menu.offsetHeight) + "px"
+
+  // 文件夹/文件 菜单适配
+  const folderOnlyItems = menu.querySelectorAll("div:nth-child(5),div:nth-child(6)")
+  folderOnlyItems.forEach(item => {
+    item.style.display = type === "folder" ? "block" : "none"
+  })
+  const fileOnlyItems = menu.querySelectorAll("div:nth-child(2),div:nth-child(3)")
+  fileOnlyItems.forEach(item => {
+    item.style.display = type === "file" ? "block" : "none"
+  })
+}
+
+// ==================== 分片上传（断点续传） ====================
+async function uploadChunk(file, fileName, chunkIndex, totalChunks) {
+  const start = chunkIndex * CHUNK_SIZE
+  const end = Math.min(start + CHUNK_SIZE, file.size)
+  const chunk = file.slice(start, end)
+
+  const formData = new FormData()
+  formData.append("chunk", chunk)
+  formData.append("index", chunkIndex)
+  formData.append("total", totalChunks)
+  formData.append("fileName", fileName)
+
+  await fetch("/api/upload-chunk", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${authToken}` },
+    body: formData
+  })
+}
+
+async function upload() {
+  const files = Array.from($("fileInput").files)
+  if (!files.length) return alert("请选择文件")
+
+  const progressBar = $("progressBar")
+  progressBar.style.width = "0"
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const fileName = file.webkitRelativePath || file.name
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+
+      // 断点续传：查询已上传的分片
+      const checkRes = await fetch(`/api/check-chunk?fileName=${encodeURIComponent(fileName)}&total=${totalChunks}`, {
+        headers: { "Authorization": `Bearer ${authToken}` }
+      })
+      const uploadedChunks = await checkRes.json()
+
+      // 只上传未完成的分片
+      for (let c = 0; c < totalChunks; c++) {
+        if (uploadedChunks.includes(c)) continue
+        await uploadChunk(file, fileName, c, totalChunks)
+        progressBar.style.width = ((i + 1) / files.length * 100) + "%"
+      }
+
+      // 合并分片
+      await fetch("/api/merge-chunk", {
+        method: "POST",
+        headers: { 
+          "Authorization": `Bearer ${authToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ fileName, totalChunks })
+      })
+    }
+
+    alert("全部文件上传完成")
+    await loadFileList()
+  } catch (e) {
+    alert("上传失败：" + e.message)
+  } finally {
+    progressBar.style.width = "0"
+  }
+}
+
+// ==================== 基础文件操作 ====================
+async function mkdir() {
+  const name = prompt("请输入文件夹名称")
+  if (!name?.trim()) return
+
+  try {
+    await fetch("/api/mkdir", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ name: name.trim() })
+    })
+    await loadFileList()
+  } catch (e) {
+    alert("创建文件夹失败：" + e.message)
+  }
+}
+
+async function newFile() {
+  const name = prompt("请输入文件名（如 note.md）")
+  if (!name?.trim()) return
+
+  try {
+    await fetch(`/api/file/${encodeURIComponent(name.trim())}`, {
+      method: "PUT",
+      headers: { "Authorization": `Bearer ${authToken}` },
+      body: ""
+    })
+    await loadFileList()
+  } catch (e) {
+    alert("新建文件失败：" + e.message)
+  }
+}
+
+// ==================== 文件编辑器 ====================
+async function openFileEditor() {
+  if (currentFileType !== "file") return
+  try {
+    const res = await fetch(`/api/file/${encodeURIComponent(currentFileKey)}`, {
+      headers: { "Authorization": `Bearer ${authToken}` }
+    })
+    $("editorContent").value = await res.text()
+    $("fileEditor").style.display = "block"
+  } catch (e) {
+    alert("打开文件失败：" + e.message)
+  }
+}
+
+function closeEditor() {
+  $("fileEditor").style.display = "none"
+}
+
+async function saveFile() {
+  try {
+    await fetch(`/api/file/${encodeURIComponent(currentFileKey)}`, {
+      method: "PUT",
+      headers: { "Authorization": `Bearer ${authToken}` },
+      body: $("editorContent").value
+    })
+    alert("保存成功")
+    closeEditor()
+    await loadFileList()
+  } catch (e) {
+    alert("保存失败：" + e.message)
+  }
+}
+
+// ==================== 预览与直链 ====================
+function copyDirectLink() {
+  const url = `${location.origin}/api/file/${encodeURIComponent(currentFileKey)}`
+  navigator.clipboard.writeText(url)
+  alert("直链已复制到剪贴板")
+}
+
+async function previewFile() {
+  if (currentFileType !== "file") return
+  window.open(`/api/file/${encodeURIComponent(currentFileKey)}`, "_blank")
+}
+
+// ==================== 重命名与删除 ====================
+async function renameFile() {
+  const newName = prompt("请输入新名称", currentFileKey.split("/").pop())
+  if (!newName?.trim()) return
+
+  try {
+    await fetch("/api/rename", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ key: currentFileKey, newName: newName.trim() })
+    })
+    await loadFileList()
+  } catch (e) {
+    alert("重命名失败：" + e.message)
+  }
+}
+
+async function deleteFile() {
+  if (!confirm(`确定要删除 ${currentFileKey} 吗？`)) return
+
+  try {
+    await fetch("/api/delete", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ key: currentFileKey })
+    })
+    await loadFileList()
+  } catch (e) {
+    alert("删除失败：" + e.message)
+  }
+}
+
+// ==================== 打包下载 ====================
+async function downloadFolder() {
+  if (currentFileType !== "folder") return
+  const keys = fileList.filter(f => f.key.startsWith(currentFileKey)).map(f => f.key)
+  if (!keys.length) return alert("文件夹为空")
+
+  try {
+    const res = await fetch("/api/zip", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ keys })
+    })
+    const blob = await res.blob()
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = currentFileKey.replace(/\//g, "") + ".zip"
+    a.click()
+  } catch (e) {
+    alert("下载失败：" + e.message)
+  }
+}
+
+async function batchZip() {
+  const keys = Array.from(selectedFiles)
+  if (!keys.length) return alert("请先选择文件")
+
+  try {
+    const res = await fetch("/api/zip", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ keys })
+    })
+    const blob = await res.blob()
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = "批量下载.zip"
+    a.click()
+  } catch (e) {
+    alert("打包失败：" + e.message)
+  }
+}
+
+// ==================== 分享功能 ====================
+async function createShare() {
+  const pwd = prompt("请设置分享密码（留空则无密码）") || ""
+  const expHours = prompt("请设置过期时间（小时）", "24") || "24"
+
+  try {
+    const res = await fetch("/api/share", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ 
+        key: currentFileKey, 
+        password: pwd, 
+        expireHours: parseInt(expHours) 
+      })
+    })
+    const shareUrl = await res.text()
+    navigator.clipboard.writeText(shareUrl)
+    alert("分享链接已复制：\n" + shareUrl)
+  } catch (e) {
+    alert("生成分享失败：" + e.message)
+  }
+}
+
+// ==================== 修改密码 ====================
+function showChangePwd() {
+  const newUser = prompt("请输入新账号", DEFAULT_USER)
+  const newPass = prompt("请输入新密码", DEFAULT_PASS)
+  if (!newUser?.trim() || !newPass?.trim()) return
+
+  changePwd(newUser.trim(), newPass.trim())
+}
+
+async function changePwd(newUser, newPass) {
+  try {
+    const res = await fetch("/api/change-pwd", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ newUser, newPass })
+    })
+    if (res.ok) {
+      alert("修改成功，请重新登录")
+      location.reload()
+    } else {
+      alert("修改失败")
+    }
+  } catch (e) {
+    alert("修改失败：" + e.message)
+  }
+}
+
+// ==================== 多用户管理 ====================
+function showUserPanel() {
+  if (!isAdmin) return alert("仅管理员可访问")
+  $("userPanel").style.display = "block"
+  loadUserList()
+}
+
+function hideUserPanel() {
+  $("userPanel").style.display = "none"
+}
+
+async function loadUserList() {
+  try {
+    const res = await fetch("/api/users", {
+      headers: { "Authorization": `Bearer ${authToken}` }
+    })
+    const users = await res.json()
+    $("userList").innerHTML = users.map(u => 
+      `<div style="padding:8px;border-bottom:1px solid var(--bd)">${u.user} ${u.isAdmin ? "<span style='color:var(--success)'>[管理员]</span>" : ""}</div>`
+    ).join("")
+  } catch (e) {
+    alert("加载用户列表失败：" + e.message)
+  }
+}
+
+async function createUser() {
+  const user = prompt("请输入新用户账号")
+  const pass = prompt("请输入新用户密码")
+  if (!user?.trim() || !pass?.trim()) return
+
+  try {
+    await fetch("/api/create-user", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ user: user.trim(), pass: pass.trim() })
+    })
+    alert("用户创建成功")
+    loadUserList()
+  } catch (e) {
+    alert("创建用户失败：" + e.message)
+  }
+}
+
+async function deleteUser() {
+  const user = prompt("请输入要删除的用户账号")
+  if (!user?.trim()) return
+
+  try {
+    await fetch("/api/delete-user", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ user: user.trim() })
+    })
+    alert("用户删除成功")
+    loadUserList()
+  } catch (e) {
+    alert("删除用户失败：" + e.message)
+  }
+}
+
+// ==================== 离线下载 ====================
+async function offlineDownload() {
+  const url = $("offlineUrl").value.trim()
+  if (!url) return alert("请输入下载链接")
+
+  try {
+    await fetch("/api/offline-download", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url })
+    })
+    alert("离线下载任务已提交，后台正在下载")
+    $("offlineUrl").value = ""
+    setTimeout(() => loadFileList(), 3000)
+  } catch (e) {
+    alert("提交离线下载失败：" + e.message)
+  }
+}
+
+// ==================== 文件夹加密 ====================
+async function encryptFolder() {
+  if (currentFileType !== "folder") return
+  const pwd = prompt("请设置文件夹密码（留空则取消加密）")
+
+  try {
+    await fetch("/api/encrypt-folder", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ key: currentFileKey, password: pwd || "" })
+    })
+    alert(pwd ? "文件夹加密成功" : "文件夹已取消加密")
+  } catch (e) {
+    alert("加密失败：" + e.message)
+  }
+}
+</script>
+</body>
+</html>
